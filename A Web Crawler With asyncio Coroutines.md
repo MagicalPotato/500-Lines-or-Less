@@ -38,3 +38,21 @@ third stage, we use the full-featured coroutines from Python's standard "asyncio
 我们分三步来介绍这个例子。首先，我们展示一个异步循环并编写一个递归使用该循环的爬虫：它非常有效，但将其扩展到更复杂的问题时会导致代码混乱不堪无法管理。 
 因此在第二步,我们引出了既高效又可扩展的Python协调器,并用Python生成器实了现简单的协调器。第三步，我们直接使用Python标准库提供的高级协调器，并用异步队
 列来协调他们。
+
+### The Task
+A web crawler finds and downloads all pages on a website, perhaps to archive or index them. Beginning with a root URL, it fetches each 
+page, parses it for links to unseen pages, and adds these to a queue. It stops when it fetches a page with no unseen links and the queue 
+is empty.
+
+爬虫查找和下载所有页面,是为了存档或索引它们。从根URL开始抓取并分析每个页面，如果该页面的有未被抓取过的链接,就将其添加到队列中。当页面上所有链接都被抓
+取完或者队列为空时,爬虫将会停止。
+
+We can hasten this process by downloading many pages concurrently. As the crawler finds new links, it launches simultaneous fetch 
+operations for the new pages on separate sockets. It parses responses as they arrive, adding new links to the queue. There may come some 
+point of diminishing returns where too much concurrency degrades performance, so we cap the number of concurrent requests, and leave the 
+remaining links in the queue until some in-flight requests complete.
+
+我们可以通过同时下载多个页面来加速爬取过程。当爬虫发现新的链接时，它会在一个单独的套接字程序上启动抓取新页面的操作,解析新链接的响应,而后将新链接加入抓
+取队列.在并发量大到产生性能问题时会出现间歇地卡顿,所以我们限制了并发请求的数量,将获取到的链接保留在队列中直到那些正在进行的任务完成后才继续新任务。
+
+
