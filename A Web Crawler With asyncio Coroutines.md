@@ -1,4 +1,4 @@
-### A. Jesse Jiryu Davis and Guido van Rossum
+### A. Jesse Jiryu Davis and Guido van Rossum(作者简介)
 A. Jesse Jiryu Davis is a staff engineer at MongoDB in New York. He wrote Motor, the async MongoDB Python driver, and he is the lead 
 developer of the MongoDB C Driver and a member of the PyMongo team. He contributes to asyncio and Tornado. He writes at 
 http://emptysqua.re.
@@ -13,7 +13,7 @@ http://www.python.org/~guido/.
 Guido van Rossum是互联网主要编程语言之一--Pytho 的创始人。Python社区将他称为BDFL（仁慈的生活独裁者），该标题取自短剧Monty Python。其个人主页是
 http://www.python.org/~guido/ 。
 
-### Introduction
+### Introduction(概述)
 Classical computer science emphasizes efficient algorithms that complete computations as quickly as possible. But many networked programs 
 spend their time not computing, but holding open many connections that are slow, or have infrequent events. These programs present a very 
 different challenge: to wait for a huge number of network events efficiently. A contemporary approach to this problem is asynchronous I/O, 
@@ -39,7 +39,7 @@ third stage, we use the full-featured coroutines from Python's standard "asyncio
 因此在第二步,我们引出了既高效又可扩展的Python协调器,并用Python生成器实了现简单的协调器。第三步，我们直接使用Python标准库提供的高级协调器，并用异步队
 列来协调他们。
 
-### The Task
+### The Task(任务概况)
 A web crawler finds and downloads all pages on a website, perhaps to archive or index them. Beginning with a root URL, it fetches each 
 page, parses it for links to unseen pages, and adds these to a queue. It stops when it fetches a page with no unseen links and the queue 
 is empty.
@@ -55,4 +55,54 @@ remaining links in the queue until some in-flight requests complete.
 我们可以通过同时下载多个页面来加速爬取过程。当爬虫发现新的链接时，它会在一个单独的套接字程序上启动抓取新页面的操作,解析新链接的响应,而后将新链接加入抓
 取队列.在并发量大到产生性能问题时会出现间歇地卡顿,所以我们限制了并发请求的数量,将获取到的链接保留在队列中直到那些正在进行的任务完成后才继续新任务。
 
+### The Traditional Approach(传统方法)
+How do we make the crawler concurrent? Traditionally we would create a thread pool. Each thread would be in charge of downloading one 
+page at a time over a socket. For example, to download a page from xkcd.com:
 
+爬虫如何并发?传统的方式是创建一个线程池,每个线程负责通过套接字一次下载一个页面。例如,要从xkcd.com下载页面,传统方式如下：
+```
+def fetch(url):
+    sock = socket.socket()
+    sock.connect(('xkcd.com', 80))
+    request = 'GET {} HTTP/1.0\r\nHost: xkcd.com\r\n\r\n'.format(url)
+    sock.send(request.encode('ascii'))
+    response = b''
+    chunk = sock.recv(4096)
+    while chunk:
+        response += chunk
+        chunk = sock.recv(4096)
+
+    # Page is now downloaded.
+    links = parse_links(response)
+    q.add(links)
+```
+By default, socket operations are blocking: when the thread calls a method like connect or recv, it pauses until the operation 
+completes. Consequently to download many pages at once, we need many threads. A sophisticated application amortizes the cost of thread-
+creation by keeping idle threads in a thread pool, then checking them out to reuse them for subsequent tasks; it does the same with 
+sockets in a connection pool.
+
+默认情况下，套接字出于阻塞状态：当线程调用connect或recv之类的方法时，它会暂停直到操作完成。因此，要一次下载多个页面，我们需要很多线程。复杂的应用程序
+为了节省频繁创建线程的开销,会在线程池中保留一些空闲线程，并在需要时将其分配给后续任务; 连接池中的套接字也是如此。
+
+And yet, threads are expensive, and operating systems enforce a variety of hard caps on the number of threads a process, user, or machine 
+may have. On Jesse's system, a Python thread costs around 50k of memory, and starting tens of thousands of threads causes failures. If we 
+scale up to tens of thousands of simultaneous operations on concurrent sockets, we run out of threads before we run out of sockets. Per-
+thread overhead or system limits on threads are the bottleneck.
+
+然而，线程的开销很大，并且操作系统对系统中的进程数，用户或机器能拥有的线程数量有各种硬性限制。 在Jesse的系统上，一个Python线程大约占用50k的内存，当线
+程数量上万时会导致新线程启动失败。如果在并发套接字上存在数以万计的并发操作，那么在套接字还没用完之前我们会先用完线程。线程自身的开销或系统限制是传统爬
+虫并发的瓶颈。
+
+In his influential article "The C10K problem", Dan Kegel outlines the limitations of multithreading for I/O concurrency. He says:It's 
+time for web servers to handle ten thousand clients simultaneously, don't you think? After all, the web is a big place now.
+
+Dan Kegel就曾在他著名的文章“The C10K problem”中阐了多线程对I/O并发的局限性。他说:是时候让服务器同时处理一万个请求了。你不觉得吗？毕竟网络现在可是一个大地方。
+
+Kegel coined the term "C10K" in 1999. Ten thousand connections sounds dainty now, but the problem has changed only in size, not in kind. 
+Back then, using a thread per connection for C10K was impractical. Now the cap is orders of magnitude higher. Indeed, our toy web crawler 
+would work just fine with threads. Yet for very large scale applications, with hundreds of thousands of connections, the cap remains: 
+there is a limit beyond which most systems can still create sockets, but have run out of threads. How can we overcome this?
+
+Kegel在1999年提出了“一万个连接的限制”这个概念。一万个连接现在听起来不算什么，但这并不是说现在数量问题已经得到解决,事实上本质并未改变。那时候，单纯为了
+去契合"C10K"而为每个连接创建一个线程是不切实际的。如今这个上限高出了好几个数量级,我们这个示例爬虫也的确可以很好地处理线程。然而,对于具有数十万个连接
+的超大规模应用程序，这个限制依然存在：超过这个限制，大多数系统仍可以创建套接字，但却没法再创建线程了。这该如何解决？
