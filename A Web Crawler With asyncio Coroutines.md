@@ -111,7 +111,7 @@ Kegel在1999年提出了“一万个连接的限制”这个概念。一万个�
 Asynchronous I/O frameworks do concurrent operations on a single thread using non-blocking sockets. In our async crawler, we set the 
 socket non-blocking before we begin to connect to the server:
 
-异步I/O框架使用非阻塞套接字在单个线程上执行并发操作。这个异步爬虫，在连接到服务器之前，我们会先将套接字设置为非阻塞：
+异步I/O框架使用非阻塞套接字在单个线程上执行并发操作。这个异步爬虫中，在连接到服务器之前，我们会先将套接字设置为非阻塞：
 ```
 sock = socket.socket()
 sock.setblocking(False)
@@ -129,7 +129,7 @@ irritating behavior of the underlying C function, which sets errno to EINPROGRES
 Now our crawler needs a way to know when the connection is established, so it can send the HTTP request. We could simply keep trying in a 
 tight loop:
 
-现在，我们的爬虫需要通过一种方式来判断何时建立连接，以便发送HTTP请求。一个简单的循环即可：
+现在，我们的爬虫需要通过一种方式来判断何时建立连接，以便发送HTTP请求。一个简单的循环即可满足要求：
 ```
 request = 'GET {} HTTP/1.0\r\nHost: xkcd.com\r\n\r\n'.format(url)
 encoded = request.encode('ascii')
@@ -143,4 +143,72 @@ while True:
 
 print('sent')
 ```
+This method not only wastes electricity, but it cannot efficiently await events on multiple sockets. In ancient times, BSD Unix's 
+solution to this problem was select, a C function that waits for an event to occur on a non-blocking socket or a small array of them. 
+Nowadays the demand for Internet applications with huge numbers of connections has led to replacements like poll, then kqueue on BSD and 
+epoll on Linux. These APIs are similar to select, but perform well with very large numbers of connections.
 
+这个循环虽然简单却不实用,因为它不但浪费资源,而且无法在多套接字上进行事件监听。过去, 加州大学柏克利分校的unix小组解决这个问题的方式是调用一个或者一组名
+叫select的C函数,该函数能够对非阻塞套接字进行监听。如今，随着具有超大连接数量的网络应用的不断发展，越来越多的解决方法也应运而生,比如poll,BSD的kqueue,
+linux的epoll等。这些API有着与select类似的功能，但在超大连接数量的场景表现更佳。
+
+Python 3.4's DefaultSelector uses the best select-like function available on your system. To register for notifications about network 
+I/O, we create a non-blocking socket and register it with the default selector:
+
+Python3.4的DefaultSelector会在你的系统中选择一个和最具select函数风格的接口来使用。接下来我们创建一个非阻塞套接字并使用默认选择器注册网络I/O的通知:
+```
+from selectors import DefaultSelector, EVENT_WRITE
+
+selector = DefaultSelector()
+
+sock = socket.socket()
+sock.setblocking(False)
+try:
+    sock.connect(('xkcd.com', 80))
+except BlockingIOError:
+    pass
+
+def connected():
+    selector.unregister(sock.fileno())
+    print('connected!')
+
+selector.register(sock.fileno(), EVENT_WRITE, connected)
+```
+We disregard the spurious error and call selector.register, passing in the socket's file descriptor and a constant that expresses what 
+event we are waiting for. To be notified when the connection is established, we pass EVENT_WRITE: that is, we want to know when the 
+socket is "writable". We also pass a Python function, connected, to run when that event occurs. Such a function is known as a callback.
+
+我们忽略警告调用selector.register，传入套接字的文件描述符和表示等待什么事件的常量。在这个例子中我们传入的是等待写入事件的常量EVENT_WRITE,这是为了
+能在建立连接时得到通知,也就是说我们想知道套接字何时“可写”。还传入了一个Python函数,connected,以便在事件发生时运行。这样的函数称为回调。
+
+We process I/O notifications as the selector receives them, in a loop:
+
+当选择器收到I/O通知时，我们以循环的方式处理它们：
+```
+def loop():
+    while True:
+        events = selector.select()
+        for event_key, event_mask in events:
+            callback = event_key.data
+            callback()
+```
+The connected callback is stored as event_key.data, which we retrieve and execute once the non-blocking socket is connected.
+
+我们将event_key.data设置为回调标志，一旦非阻塞套接字连接成功，就进行回调。
+
+Unlike in our fast-spinning loop above, the call to select here pauses, awaiting the next I/O events. Then the loop runs callbacks that 
+are waiting for these events. Operations that have not completed remain pending until some future tick of the event loop.
+
+What have we demonstrated already? We showed how to begin an operation and execute a callback when the operation is ready. An async 
+framework builds on the two features we have shown—non-blocking sockets and the event loop—to run concurrent operations on a single 
+thread.
+
+We have achieved "concurrency" here, but not what is traditionally called "parallelism". That is, we built a tiny system that does 
+overlapping I/O. It is capable of beginning new operations while others are in flight. It does not actually utilize multiple cores to 
+execute computation in parallel. But then, this system is designed for I/O-bound problems, not CPU-bound ones.4
+
+So our event loop is efficient at concurrent I/O because it does not devote thread resources to each connection. But before we proceed, 
+it is important to correct a common misapprehension that async is faster than multithreading. Often it is not—indeed, in Python, an event 
+loop like ours is moderately slower than multithreading at serving a small number of very active connections. In a runtime without a 
+global interpreter lock, threads would perform even better on such a workload. What asynchronous I/O is right for, is applications with 
+many slow or sleepy connections with infrequent events.5
