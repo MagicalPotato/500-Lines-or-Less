@@ -105,4 +105,42 @@ there is a limit beyond which most systems can still create sockets, but have ru
 
 Kegel在1999年提出了“一万个连接的限制”这个概念。一万个连接现在听起来不算什么，但这并不是说现在数量问题已经得到解决,事实上本质并未改变。那时候，单纯为了
 去契合"C10K"而为每个连接创建一个线程是不切实际的。如今这个上限高出了好几个数量级,我们这个示例爬虫也的确可以很好地处理线程。然而,对于具有数十万个连接
-的超大规模应用程序，这个限制依然存在：超过这个限制，大多数系统仍可以创建套接字，但却没法再创建线程了。这该如何解决？
+的超大规模应用程序，这个限制依然存在：超过这个限制，大多数系统仍可以创建套接字，但却没法再创建线程了。我们该如何解决这个问题？
+
+### Async(异步)
+Asynchronous I/O frameworks do concurrent operations on a single thread using non-blocking sockets. In our async crawler, we set the 
+socket non-blocking before we begin to connect to the server:
+
+异步I/O框架使用非阻塞套接字在单个线程上执行并发操作。这个异步爬虫，在连接到服务器之前，我们会先将套接字设置为非阻塞：
+```
+sock = socket.socket()
+sock.setblocking(False)
+try:
+    sock.connect(('xkcd.com', 80))
+except BlockingIOError:
+    pass
+```
+Irritatingly, a non-blocking socket throws an exception from connect, even when it is working normally. This exception replicates the 
+irritating behavior of the underlying C function, which sets errno to EINPROGRESS to tell you it has begun.
+
+这里有个问题，即便非阻塞套接字在正常工作状况下,它也可能会抛出异常。这个异常是由底层的C函数导致的，该函数将一个变量errno设置为EINPROGRESS(个人编程
+习惯,将其拆成e in progress,大意是什么什么正在进行中)，以告诉您它已经开始工作了。
+
+Now our crawler needs a way to know when the connection is established, so it can send the HTTP request. We could simply keep trying in a 
+tight loop:
+
+现在，我们的爬虫需要通过一种方式来判断何时建立连接，以便发送HTTP请求。一个简单的循环即可：
+```
+request = 'GET {} HTTP/1.0\r\nHost: xkcd.com\r\n\r\n'.format(url)
+encoded = request.encode('ascii')
+
+while True:
+    try:
+        sock.send(encoded)
+        break  # Done.
+    except OSError as e:
+        pass
+
+print('sent')
+```
+
