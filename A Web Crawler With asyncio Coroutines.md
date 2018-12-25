@@ -178,7 +178,7 @@ We disregard the spurious error and call selector.register, passing in the socke
 event we are waiting for. To be notified when the connection is established, we pass EVENT_WRITE: that is, we want to know when the 
 socket is "writable". We also pass a Python function, connected, to run when that event occurs. Such a function is known as a callback.
 
-我们忽略警告调用selector.register，传入套接字的文件描述符和表示等待什么事件的常量。在这个例子中我们传入的是等待写入事件的常量EVENT_WRITE,这是为了
+我们忽略警告调用selector.register，传入套接字的文件描述符和表示等待某种事件的常量。在这个例子中我们传入的是等待写入事件的常量EVENT_WRITE,这是为了
 能在建立连接时得到通知,也就是说我们想知道套接字何时“可写”。还传入了一个Python函数,connected,以便在事件发生时运行。这样的函数称为回调。
 
 We process I/O notifications as the selector receives them, in a loop:
