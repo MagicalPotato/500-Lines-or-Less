@@ -199,16 +199,28 @@ The connected callback is stored as event_key.data, which we retrieve and execut
 Unlike in our fast-spinning loop above, the call to select here pauses, awaiting the next I/O events. Then the loop runs callbacks that 
 are waiting for these events. Operations that have not completed remain pending until some future tick of the event loop.
 
+与之前的那种阻塞式循环监听不同，这个循环中的select方法处于暂停状态，直到下一个I/O事件触发它,完了之后会调用callback方法回到等待状态继续等待新的事件。
+尚未完成的操作将会挂起，直到再次被触发。
+
 What have we demonstrated already? We showed how to begin an operation and execute a callback when the operation is ready. An async 
 framework builds on the two features we have shown—non-blocking sockets and the event loop—to run concurrent operations on a single 
 thread.
 
+这说明了什么呢？我们展示了如何在操作准备就绪时执行操作并同时执行回调。异步框架就是基于这两个特性--非阻塞套接字和在单线程上并发的事件循环。
+
 We have achieved "concurrency" here, but not what is traditionally called "parallelism". That is, we built a tiny system that does 
 overlapping I/O. It is capable of beginning new operations while others are in flight. It does not actually utilize multiple cores to 
-execute computation in parallel. But then, this system is designed for I/O-bound problems, not CPU-bound ones.4
+execute computation in parallel. But then, this system is designed for I/O-bound problems, not CPU-bound ones.
+
+虽然我们实现了“并发”，但这并不是传统意义上的“同时进行”。我们只是建立了一个可以进行I/O重叠的小型系统,它既能处理正在进行的任务，同时也能开启新的操作。
+这也不是利用多核来实现并行计算。本质上这个系统就是针对I/O限制的问题设计的，而不是针对CPU限制的问题。
 
 So our event loop is efficient at concurrent I/O because it does not devote thread resources to each connection. But before we proceed, 
 it is important to correct a common misapprehension that async is faster than multithreading. Often it is not—indeed, in Python, an event 
 loop like ours is moderately slower than multithreading at serving a small number of very active connections. In a runtime without a 
 global interpreter lock, threads would perform even better on such a workload. What asynchronous I/O is right for, is applications with 
-many slow or sleepy connections with infrequent events.5
+many slow or sleepy connections with infrequent events.
+
+毫无疑问,这个非阻塞循环在处理并发I/O时是高效的，因为它没有为每个连接都分配线程资源。但在继续之前，还是要纠正一个误解，即异步比多线程快。事实并非如此。
+Python环境下，当遇到一些少量但是连接活跃的场景时,类似于我们这样的循环是逊色于线程的。在不考虑运行时全局解释器锁的情况下，线程能更好地处理这种任务,而异
+步I/O更适合处理那些连接缓慢或者经常休眠的偶发事件。
