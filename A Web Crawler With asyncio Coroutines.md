@@ -227,11 +227,50 @@ Python环境下，当遇到一些少量但是连接活跃的场景时,类似于�
 
 ### Programming With Callbacks(编写回调代码)
 With the runty async framework we have built so far, how can we build a web crawler? Even a simple URL-fetcher is painful to write.
+
 如何用这个我们已经完成的小型异步框架来构建一个Web爬虫呢？还早呢,即使是一个简单的URL获取器,也并不好写。
 
 We begin with global sets of the URLs we have yet to fetch, and the URLs we have seen:
-让我们从当前可见的和还未爬取过的URL集合开始吧：
+
+那就让我们从当前可见的和还未爬取过的URL集合开始吧：
 ```
 urls_todo = set(['/'])
 seen_urls = set(['/'])
+```
+The seen_urls set includes urls_todo plus completed URLs. The two sets are initialized with the root URL "/".
+
+seen_urls集包括待爬取的和已完成的URL。两个集合都是用根URL“/”来初始化。
+
+Fetching a page will require a series of callbacks. The connected callback fires when a socket is connected, and sends a GET request to 
+the server. But then it must await a response, so it registers another callback. If, when that callback fires, it cannot read the full 
+response yet, it registers again, and so on.
+
+获取一个页面涉及一系列回调。 套接字连接成功时会触发该次连接的回调，并向服务器发送一个GET请求。但该次连接必须等待一个响应，因此该次连接又注册另一个回调
+来等待该次的响应。 整个回调会一直持续直到获取到完整的响应内容。
+
+Let us collect these callbacks into a Fetcher object. It needs a URL, a socket object, and a place to accumulate the response bytes:
+
+我们将这些回调收集到Fetcher对象中。它需要一个URL，一个套接字对象和一个存放响应数据的结构：
+```
+class Fetcher:
+    def __init__(self, url):
+        self.response = b''  # Empty array of bytes.
+        self.url = url
+        self.sock = None
+```
+We begin by calling Fetcher.fetch:
+
+首先调用Fetcher的fetch的方法:
+```
+    # Method on Fetcher class.
+    def fetch(self):
+        self.sock = socket.socket()
+        self.sock.setblocking(False)
+        try:
+            self.sock.connect(('xkcd.com', 80))
+        except BlockingIOError:
+            pass
+
+        # Register next callback.
+        selector.register(self.sock.fileno(), EVENT_WRITE, self.connected)
 ```
