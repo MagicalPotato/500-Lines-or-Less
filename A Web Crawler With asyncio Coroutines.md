@@ -250,7 +250,7 @@ response yet, it registers again, and so on.
 
 Let us collect these callbacks into a Fetcher object. It needs a URL, a socket object, and a place to accumulate the response bytes:
 
-我们将这些回调收集到Fetcher对象中。它需要一个URL，一个套接字对象和一个存放响应数据的结构：
+我们将这些回调收集到Fetcher对象中。它需要一个URL，一个套接字对象和一个存放响应数据的地方：
 ```
 class Fetcher:
     def __init__(self, url):
@@ -260,7 +260,7 @@ class Fetcher:
 ```
 We begin by calling Fetcher.fetch:
 
-首先调用Fetcher的fetch的方法:
+我们从Fetcher的fetch的方法开始:
 ```
     # Method on Fetcher class.
     def fetch(self):
