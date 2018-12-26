@@ -206,7 +206,7 @@ What have we demonstrated already? We showed how to begin an operation and execu
 framework builds on the two features we have shown—non-blocking sockets and the event loop—to run concurrent operations on a single 
 thread.
 
-这说明了什么呢？我们展示了如何在操作准备就绪时执行操作并同时执行回调。异步框架就是基于这两个特性--非阻塞套接字和在单线程上并发的事件循环。
+这说明了什么呢？我们展示了如何在操作准备就绪时执行操作并同时执行回调。而异步框架就是基于这两个特性--非阻塞套接字和在单线程上并发的事件循环。
 
 We have achieved "concurrency" here, but not what is traditionally called "parallelism". That is, we built a tiny system that does 
 overlapping I/O. It is capable of beginning new operations while others are in flight. It does not actually utilize multiple cores to 
