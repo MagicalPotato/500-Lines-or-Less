@@ -224,3 +224,14 @@ many slow or sleepy connections with infrequent events.
 毫无疑问,这个非阻塞循环在处理并发I/O时是高效的，因为它没有为每个连接都分配线程资源。但在继续之前，还是要纠正一个误解，即异步比多线程快。事实并非如此。
 Python环境下，当遇到一些少量但是连接活跃的场景时,类似于我们这样的循环是逊色于线程的。在不考虑运行时全局解释器锁的情况下，线程能更好地处理这种任务,而异
 步I/O更适合处理那些连接缓慢或者经常休眠的偶发事件。
+
+### Programming With Callbacks(编写回调代码)
+With the runty async framework we have built so far, how can we build a web crawler? Even a simple URL-fetcher is painful to write.
+如何用这个我们已经完成的小型异步框架来构建一个Web爬虫呢？还早呢,即使是一个简单的URL获取器,也并不好写。
+
+We begin with global sets of the URLs we have yet to fetch, and the URLs we have seen:
+让我们从当前可见的和还未爬取过的URL集合开始吧：
+```
+urls_todo = set(['/'])
+seen_urls = set(['/'])
+```
