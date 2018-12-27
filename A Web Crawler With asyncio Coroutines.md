@@ -178,7 +178,7 @@ We disregard the spurious error and call selector.register, passing in the socke
 event we are waiting for. To be notified when the connection is established, we pass EVENT_WRITE: that is, we want to know when the 
 socket is "writable". We also pass a Python function, connected, to run when that event occurs. Such a function is known as a callback.
 
-我们忽略警告调用selector.register，传入套接字的文件描述符和表示等待某种事件的常量。在这个例子中我们传入的是等待写入事件的常量EVENT_WRITE,这是为了
+我们忽略警告调用selector.register，传入套接字的文件描述符和表示等待某个事件的常量。在这个例子中我们传入的是等待写入事件的常量EVENT_WRITE,这是为了
 能在建立连接时得到通知,也就是说我们想知道套接字何时“可写”。还传入了一个Python函数,connected,以便在事件发生时运行。这样的函数称为回调。
 
 We process I/O notifications as the selector receives them, in a loop:
@@ -213,7 +213,7 @@ overlapping I/O. It is capable of beginning new operations while others are in f
 execute computation in parallel. But then, this system is designed for I/O-bound problems, not CPU-bound ones.
 
 虽然我们实现了“并发”，但这并不是传统意义上的“同时进行”。我们只是建立了一个可以进行I/O重叠的小型系统,它既能处理正在进行的任务，同时也能开启新的操作。
-这也不是利用多核来实现并行计算。本质上这个系统就是针对I/O限制的问题设计的，而不是针对CPU限制的问题。
+当然这不是利用多核来实现并行计算。本质上这个系统是针对I/O限制的问题设计的，而非CPU限制的问题。
 
 So our event loop is efficient at concurrent I/O because it does not devote thread resources to each connection. But before we proceed, 
 it is important to correct a common misapprehension that async is faster than multithreading. Often it is not—indeed, in Python, an event 
@@ -222,7 +222,7 @@ global interpreter lock, threads would perform even better on such a workload. W
 many slow or sleepy connections with infrequent events.
 
 毫无疑问,这个非阻塞循环在处理并发I/O时是高效的，因为它没有为每个连接都分配线程资源。但在继续之前，还是要纠正一个误解，即异步比多线程快。事实并非如此。
-Python环境下，当遇到一些少量但是连接活跃的场景时,类似于我们这样的循环是逊色于线程的。在不考虑运行时全局解释器锁的情况下，线程能更好地处理这种任务,而异
+Python环境下，当遇到一些少量但是连接活跃的场景时,类似于我们这样的循环是逊色于线程的。在不考虑运行时全局解释器锁的情况下，线程能更好地处理这种任务。异
 步I/O更适合处理那些连接缓慢或者经常休眠的偶发事件。
 
 ### Programming With Callbacks(编写回调代码)
@@ -232,7 +232,7 @@ With the runty async framework we have built so far, how can we build a web craw
 
 We begin with global sets of the URLs we have yet to fetch, and the URLs we have seen:
 
-那就让我们从当前可见的和还未爬取过的URL集合开始吧：
+让我们先从当前可见的和还未爬取过的URL集合开始吧：
 ```
 urls_todo = set(['/'])
 seen_urls = set(['/'])
@@ -246,7 +246,7 @@ the server. But then it must await a response, so it registers another callback.
 response yet, it registers again, and so on.
 
 获取一个页面涉及一系列回调。 套接字连接成功时会触发该次连接的回调，并向服务器发送一个GET请求。但该次连接必须等待一个响应，因此该次连接又注册另一个回调
-来等待该次的响应。 整个回调会一直持续直到获取到完整的响应内容。
+来等待该次的响应,如此持续下去直到获取到完整的响应内容。
 
 Let us collect these callbacks into a Fetcher object. It needs a URL, a socket object, and a place to accumulate the response bytes:
 
@@ -260,7 +260,7 @@ class Fetcher:
 ```
 We begin by calling Fetcher.fetch:
 
-我们从Fetcher的fetch的方法开始:
+再来看看Fetcher的fetch的方法:
 ```
     # Method on Fetcher class.
     def fetch(self):
@@ -272,5 +272,72 @@ We begin by calling Fetcher.fetch:
             pass
 
         # Register next callback.
-        selector.register(self.sock.fileno(), EVENT_WRITE, self.connected)
+        selector.(self.sock.fileno(), EVENT_WRITE, self.connected)
+```
+The fetch method begins connecting a socket. But notice the method returns before the connection is established. It must return control 
+to the event loop to wait for the connection. To understand why, imagine our whole application was structured so:
+
+fetch方法开始连接套接字,但它会在建立连接之前返回。因为它必须将程序控制权返回给循环以等待下次连接。为了理解原因，我们假想整个应用程序的结构如下:
+```
+# Begin fetching http://xkcd.com/353/
+fetcher = Fetcher('/353/')
+fetcher.fetch()
+
+while True:
+    events = selector.select()
+    for event_key, event_mask in events:
+        callback = event_key.data
+        callback(event_key, event_mask)
+```
+All event notifications are processed in the event loop when it calls select. Hence fetch must hand control to the event loop, so that 
+the program knows when the socket has connected. Only then does the loop run the connected callback, which was registered at the end of 
+fetch above.
+
+调用select时，会在循环中处理所有的事件通知。 因此,fetch方法必须将控制权交给循环，这样程序就能知道socket在什么时候进行过连接。只有这样,循环才会执行回
+调，该回调就是上面的fetch方法结束时注册的。
+
+Here is the implementation of connected:
+
+这是连接的实现:
+```
+    # Method on Fetcher class.
+    def connected(self, key, mask):
+        print('connected!')
+        selector.unregister(key.fd)
+        request = 'GET {} HTTP/1.0\r\nHost: xkcd.com\r\n\r\n'.format(self.url)
+        self.sock.send(request.encode('ascii'))
+
+        # Register the next callback.
+        selector.register(key.fd,
+                          EVENT_READ,
+                          self.read_response)
+```
+The method sends a GET request. A real application would check the return value of send in case the whole message cannot be sent at once. 
+But our request is small and our application unsophisticated. It blithely calls send, then waits for a response. Of course, it must 
+register yet another callback and relinquish control to the event loop. The next and final callback, read_response, processes the 
+server's reply:
+
+connected方法发送了一个GET请求。应用程序会检查该次GET请求的返回值，以防止没有将信息发送全面。但我们发送的请求很小而且我们的应用程序也并不复杂,很轻松
+地就能调用send，然后等待响应。当然，它必须注册另一个回调并让出程序的控制权。下一次和最后一次回调,也即使read_response方法将会处理服务器的响应：
+```
+    # Method on Fetcher class.
+    def read_response(self, key, mask):
+        global stopped
+
+        chunk = self.sock.recv(4096)  # 4k chunk size.
+        if chunk:
+            self.response += chunk
+        else:
+            selector.unregister(key.fd)  # Done reading.
+            links = self.parse_links()
+
+            # Python set-logic:
+            for link in links.difference(seen_urls):
+                urls_todo.add(link)
+                Fetcher(link).fetch()  # <- New Fetcher.
+
+            seen_urls.update(links)
+            urls_todo.remove(self.url)
+            if not urls_todo:
+                stopped = True
 ```
